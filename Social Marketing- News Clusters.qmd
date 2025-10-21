@@ -25,9 +25,7 @@ pacman::p_load("tidyverse",
 
 # Clustering News Topics
 
-"Which genres are alike in terms of their audiences?""
-
-In the genre × genre matrix, similarity values capture shared audience bases between genres. Use genre × genre when you care about brand/genre positioning, cross-genre affinities, playlisting, or recommender systems.
+"Which topics are alike in terms of their audiences?"
 
 ## Correlation Matrix
 
@@ -44,7 +42,8 @@ gratifications = dat %>%
 topics = dat %>% 
     select(`Climate and environment`:`Weather`, ResponseId)
 
-characteristics = dat 
+characteristics = dat %>% 
+  select(`It adds a little humor to news stories and events`:`It provides local context to national issues`, ResponseId)
 
 # Demographics
 demos <- read_csv("RUN-Demos.csv") %>%
@@ -64,9 +63,11 @@ demos <- read_csv("RUN-Demos.csv") %>%
                        "CulturalEngagement", "Political", 'Education', 'Income'),
     remove_selected_columns = TRUE,
     remove_first_dummy = FALSE,
-    omit_colname_prefix = TRUE
+    omit_colname_prefix = TRUE,
+    ignore_na = TRUE
   ) %>% 
-  select(-`LGBTQ+ identity`)
+  select(-`LGBTQ+ identity`, -matches("(?i)other")) %>% 
+  rename_with(~ sub(".*_", "", .x))
 ```
 
 ```{r}
@@ -89,6 +90,9 @@ fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal nu
 
 ```{r}
 #| title: HCLust 4
+#| fig.width: 12
+#| fig.height: 10
+#| fig.asp: null
 
 #run hierarchical clustering
 hc = hclust(dist(corrmat), method = 'ward.D')
@@ -125,7 +129,7 @@ PC1 = Broad/Systemic Issues (left) vs. Everyday/Current Events (right)
 PC2 = Large scale (bottom) vs. Local scale (top) 
 
 
-## Biplot comparing to news characteristics
+## Biplot comparing to news gratifications
 
 ```{r}
 # run PCA
@@ -215,6 +219,105 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
+PC1: uplift; improvement (left); pragmatic (right)
+PC2: communal, affective (up); cognitive (down)
+
+
+## Biplot comparing to news characteristics
+
+```{r}
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(characteristics, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(characteristics), "ResponseId")
+demo_cor <- cor(resp_scores[, c("PC1","PC2")],
+                resp_scores[, cont_vars],
+                use = "pairwise.complete.obs")
+demo_cor <- as.data.frame(t(demo_cor))
+colnames(demo_cor) <- c("PC1","PC2")
+demo_cor$Variable <- rownames(demo_cor)
+
+# Filter for most correlated variables
+demo_cor <- demo_cor %>%
+  filter(abs(PC1) > 0.05 | abs(PC2) > 0.05)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+PC1: creative, interpretive, diverse (left); factual, straightforward (right)
+OC2: light, entertaining (up); serious (down)
+
+
+
 ## Biplot comparing to demographics
 
 ```{r}
@@ -303,7 +406,9 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-# Clustering news characteristics
+# Clustering news gratifications
+
+"Which gratifications are alike in terms of their seekers?"
 
 ```{r}
 # Create correlation matrix
@@ -325,6 +430,9 @@ fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal nu
 
 ```{r}
 #| title: HCLust 4
+#| fig.width: 12
+#| fig.height: 10
+#| fig.asp: null
 
 #run hierarchical clustering
 hc = hclust(dist(corrmat), method = 'ward.D')
@@ -359,8 +467,8 @@ fviz_cluster(k_means, corrmat, show.clust.cent = F) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey40")
 ```
 
-PC1 = Self-enhacement (left) vs. Other-altruistic (right)
-PC2 = Affective/Moral (bottom) vs. Pragmatic (top)
+PC1 = Self-enhacement/affirming (left) vs. Civic-altruistic (right)
+PC2 = Affective/Moral (Top) vs. Cognitive/Pragmatic (Bottom)
 
 ## Biplot comparing to news topics
 
@@ -394,6 +502,95 @@ resp_scores <- resp_scores %>%
 
 # correlate demographics with respondent PC scores
 cont_vars <- setdiff(names(topics), "ResponseId")
+demo_cor <- cor(resp_scores[, c("PC1","PC2")],
+                resp_scores[, cont_vars],
+                use = "pairwise.complete.obs")
+demo_cor <- as.data.frame(t(demo_cor))
+colnames(demo_cor) <- c("PC1","PC2")
+demo_cor$Variable <- rownames(demo_cor)
+
+# Filter for most correlated variables
+demo_cor <- demo_cor %>%
+  filter(abs(PC1) > 0.00 | abs(PC2) > 0.00)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  )
+
+```
+
+
+## Biplot comparing to news characteristics
+
+```{r}
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(gratifications %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(characteristics, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(characteristics), "ResponseId")
 demo_cor <- cor(resp_scores[, c("PC1","PC2")],
                 resp_scores[, cont_vars],
                 use = "pairwise.complete.obs")
@@ -539,393 +736,329 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 ```
 
 
-# Clustering people by news topics
+# Clustering news characteristics
 
-"Which people are alike in their news topic preferences?"
+"Which characteristics are alike in terms of their admirers?"
 
 ```{r}
-
-# remove non-numeric columns, but keep ResponseId separately
-id_vec <- topics$ResponseId
-
-# filter out respondents with zero variance
-dat_num <- topics %>% select(-ResponseId)
-row_sds <- apply(dat_num, 1, sd, na.rm = TRUE)
-cdat_num_nozerovar <- dat_num[row_sds > 0, ]
-id_vec   <- id_vec[row_sds > 0]  # keep IDs aligned
-
-# Also remove nonzero from cdat
-cdat_nozerovar <- topics[row_sds > 0, ]
-
-# transpose, items as rows and people as columns
-cdat_t <- as.data.frame(t(cdat_num_nozerovar))
-
-# name columns as people, rows as items
-colnames(cdat_t) <- id_vec
-rownames(cdat_t) <- colnames(cdat_num_nozerovar)
-
-# Create person-level correlation matrix
-corrmat <- cdat_t %>% 
-    cor() 
+# Create correlation matrix
+corrmat <- characteristics %>%
+    select(-ResponseId) %>%  
+    cor()
 ```
 
-```{r, eval = F}
+## Optimal number of clusters
+
+```{r}
 #| title: Optimal number of clusters
-#| eval: false
 
-fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") #it was 3
-# fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
+fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") +
+fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
 ```
 
-## 3 cluster solution
+## Hierarchical clustering
 
 ```{r}
-k = 3
+#| title: HCLust 4
+#| fig.width: 12
+#| fig.height: 10
+#| fig.asp: null
 
-# Using alternative packages that can handle larger matrices better
-library(ClusterR)
-set.seed(10)
-k_means3 <- MiniBatchKmeans(corrmat, clusters = k, batch_size = 500, num_init = 10)
-clusters = predict_KMeans(corrmat, k_means3$centroids)
+#run hierarchical clustering
+hc = hclust(dist(corrmat), method = 'ward.D')
 
-# Average correlations by cluster
-cluster_corr <- matrix(NA, k, k)
-for(i in 1:k){
-  for(j in 1:k){
-    cluster_corr[i, j] <- mean(corrmat[clusters == i, clusters == j])
-  }
-}
 
-# Plot smaller heatmap
-ggcorrplot(cluster_corr,
-           method = 'square',
-           type = 'full',
-           hc.order = F,
-           hc.method = 'ward.D',
-           lab = TRUE,
-           lab_size = 8,
-           colors = c("red", "white", "forestgreen"))
+#plot correlation matrix
+heatmaply(corrmat, 
+  limits = c(-1,1), 
+  Rowv = as.dendrogram(hc),
+  Colv = as.dendrogram(hc), 
+  k_row = 2,
+  k_col = 5,
+  colors = colorRampPalette(c("red", "white", "forestgreen"))(200),
+  fontsize_row = 8,
+  fontsize_col = 8,
+  column_text_angle = 90)
 ```
+
+
+## K Means 
 
 ```{r}
-library(irlba)
-# Instead of prcomp(corrmat, scale.=TRUE)
-# ask only for first 10 components (enough for 2D plot + stability checks)
-pcs_fast <- prcomp_irlba(corrmat, n = 10, scale. = TRUE)
+#| title: K Means
 
-# mimic original code
-scores <- as.data.frame(pcs_fast$x[, 1:2])    # respondent positions
-scores$cluster <- factor(clusters)    # add cluster assignment
+#run k-means
+k_means = kmeans(corrmat, centers = 5, nstart = 20)
 
-# correlate PCs with original items
-cor_with_items <- cor(scores[,1:2], cdat_num_nozerovar, use = "pairwise.complete.obs")
-cor_with_items <- as.data.frame(t(cor_with_items))  
-cor_with_items$Variable <- rownames(cor_with_items)
-
-arrow_scale <- 150 # to scale the arrows for readability
-clusternames = levels(scores$cluster)
-
-# Need to find convex hull of each cluster
-hull_points <- scores %>%
-  group_by(cluster) %>%
-  slice(chull(PC1, PC2))
-
-# cluster plot with arrows and labels
-ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
-  geom_point(alpha = 0.4) +
-  theme_classic() +
-  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
-  geom_polygon(data = hull_points, aes(fill = cluster), 
-               alpha = 0.1) +
-  theme_classic() +
-  geom_segment(data = cor_with_items,
-               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
-               arrow = arrow(length = unit(0.2,"cm")),
-               inherit.aes = FALSE, color = "black") +
-  ggrepel::geom_text_repel(data = cor_with_items,
-               aes(x = PC1 * (arrow_scale + 0.5),
-                   y = PC2 * (arrow_scale + 0.5),
-                   label = Variable),
-               inherit.aes = FALSE,
-               size = 5, color = "black", max.overlaps = 100) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_color_discrete(labels = clusternames, name = "Cluster") +
-  scale_shape_discrete(labels = clusternames, name = "Cluster") +
-  guides(fill = "none") +
-  ggtitle('') +
-  theme(legend.position = "top",
-        legend.direction = "horizontal",
-        legend.title = element_text(size = 15),
-        legend.text  = element_text(size = 11)) 
-
+#plot clusters
+fviz_cluster(k_means, corrmat, show.clust.cent = F) + 
+    theme_classic() +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey40")
 ```
 
+
+## Biplot comparing to news topics
 
 ```{r}
-# 3 clusters
-cdat_nozerovar$kclusters3 = predict_KMeans(corrmat, k_means3$centroids)
-
-plot_data <- cdat_nozerovar %>%
-  pivot_longer(
-    cols = c(AltRock:Soul),  # all clustering variables
-    names_to = "Variable",
-    values_to = "Score"
-  )
-
-plot_summary <- plot_data %>%
-  group_by(kclusters3, Variable) %>%
-  summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
-
-ggplot(plot_summary, aes(x = Variable, y = MeanScore, group = kclusters3, color = factor(kclusters3))) +
-  geom_line(size = 1.1) +
-  geom_point(size = 2) +
-  facet_wrap(~ kclusters3, scales = "free_y", labeller = labeller(kclusters3 = clusternames)) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
-  ) +
-  labs(y = "Average score (1–5)", x = "Concept", color = "Cluster")+
-  theme(legend.position = "top",                               
-        legend.direction = "horizontal",                       
-        legend.title = element_text(size = 12),                
-        legend.text  = element_text(size = 11))+
-  coord_flip()
-
-```
-
-### Cluster interpretation
-
-- 1: Mainstream Western Pop/Rock
-- 2: Mainstream Afro-diasporic
-- 3: Niche/Eclectic/Experimental
-
-## 4 cluster solution
-
-```{r}
-k = 4
-
-# Using alternative packages that can handle larger matrices better
-library(ClusterR)
-set.seed(10)
-k_means4 <- MiniBatchKmeans(corrmat, clusters = k, batch_size = 500, num_init = 10)
-clusters = predict_KMeans(corrmat, k_means4$centroids)
-
-
-# Average correlations by cluster
-cluster_corr <- matrix(NA, k, k)
-for(i in 1:k){
-  for(j in 1:k){
-    cluster_corr[i, j] <- mean(corrmat[clusters == i, clusters == j])
-  }
-}
-
-# Plot smaller heatmap
-ggcorrplot(cluster_corr,
-           method = 'square',
-           type = 'full',
-           hc.order = F,
-           hc.method = 'ward.D',
-           lab = TRUE,
-           lab_size = 8,
-           colors = c("red", "white", "forestgreen"))
-```
-
-```{r}
-library(irlba)
-# Instead of prcomp(corrmat, scale.=TRUE)
-# ask only for first 10 components (enough for 2D plot + stability checks)
-pcs_fast <- prcomp_irlba(corrmat, n = 10, scale. = TRUE)
-```
-
-```{r, eval = F}
-#| eval: false
-
-# eigenvalues of first 10 PCs
-eigvals <- pcs_fast$sdev^2
-
+pcs <- prcomp(corrmat, scale. = TRUE)
 # proportion of variance explained
-var_explained <- eigvals / sum(eigvals)
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
 
-# cumulative variance
-cumvar <- cumsum(var_explained)
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
 
-scree_data <- data.frame(
-  PC = 1:length(eigvals),
-  Variance = var_explained,
-  Cumulative = cumvar
-)
 
-ggplot(scree_data, aes(x = PC, y = Variance)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  geom_line(aes(y = Cumulative), color = "red", size = 1) +
-  geom_point(aes(y = Cumulative), color = "red") +
-  ylab("Proportion of Variance Explained") +
-  xlab("Principal Component") +
-  theme_classic()+
-  scale_x_continuous(breaks = 1:10)
-```
-
-```{r}
-scores <- as.data.frame(pcs_fast$x[, 1:10])    # respondent positions
-scores$cluster <- factor(clusters)    # add cluster assignment
-
-# correlate PCs with original items
-cor_with_items <- cor(scores[,1:10], cdat_num_nozerovar, use = "pairwise.complete.obs")
-cor_with_items <- as.data.frame(t(cor_with_items))  
-cor_with_items$Variable <- rownames(cor_with_items)
-
-arrow_scale <- 150 # to scale the arrows for readability
-clusternames = levels(scores$cluster)
-
-# Need to find convex hull of each cluster
-hull_points2 <- scores %>%
+hull_points <- genres %>%
   group_by(cluster) %>%
   slice(chull(PC1, PC2))
 
-# cluster plot with arrows and labels
-ggplot(scores, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
-  geom_point(alpha = 0.4) +
-  theme_classic() +
-  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
-  geom_polygon(data = hull_points2, aes(fill = cluster), 
-               alpha = 0.1) +
-  theme_classic() +
-  geom_segment(data = cor_with_items,
-               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC2 * arrow_scale),
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(characteristics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(topics, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(topics), "ResponseId")
+demo_cor <- cor(resp_scores[, c("PC1","PC2")],
+                resp_scores[, cont_vars],
+                use = "pairwise.complete.obs")
+demo_cor <- as.data.frame(t(demo_cor))
+colnames(demo_cor) <- c("PC1","PC2")
+demo_cor$Variable <- rownames(demo_cor)
+
+# Filter for most correlated variables
+demo_cor <- demo_cor %>%
+  filter(abs(PC1) > 0.00 | abs(PC2) > 0.00)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
                arrow = arrow(length = unit(0.2,"cm")),
-               inherit.aes = FALSE, color = "black") +
-  ggrepel::geom_text_repel(data = cor_with_items,
-               aes(x = PC1 * (arrow_scale + 0.5),
-                   y = PC2 * (arrow_scale + 0.5),
-                   label = Variable),
                inherit.aes = FALSE,
-               size = 5, color = "black", max.overlaps = 100) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_color_discrete(labels = clusternames, name = "Cluster") +
-  scale_shape_discrete(labels = clusternames, name = "Cluster") +
-  guides(fill = "none") +
-  ggtitle('') +
+  theme_classic() +
   theme(legend.position = "top",
         legend.direction = "horizontal",
         legend.title = element_text(size = 15),
-        legend.text  = element_text(size = 11)) 
-```
-
-```{r, eval = F}
-#| eval: false
-
-hull_points3 <- scores %>%
-  group_by(cluster) %>%
-  slice(chull(PC1, PC3))
-
-# cluster plot with arrows and labels
-ggplot(scores, aes(x = PC1, y = PC3, color = cluster, shape = cluster)) +
-  geom_point(alpha = 0.4) +
-  theme_classic() +
-  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
-  geom_polygon(data = hull_points3, aes(fill = cluster), 
-               alpha = 0.1) +
-  theme_classic() +
-  geom_segment(data = cor_with_items,
-               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC3 * arrow_scale),
-               arrow = arrow(length = unit(0.2,"cm")),
-               inherit.aes = FALSE, color = "black") +
-  ggrepel::geom_text_repel(data = cor_with_items,
-               aes(x = PC1 * (arrow_scale + 0.5),
-                   y = PC3 * (arrow_scale + 0.5),
-                   label = Variable),
-               inherit.aes = FALSE,
-               size = 5, color = "black", max.overlaps = 100) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_color_discrete(labels = clusternames, name = "Cluster") +
-  scale_shape_discrete(labels = clusternames, name = "Cluster") +
-  guides(fill = "none") +
-  ggtitle('') +
-  theme(legend.position = "top",
-        legend.direction = "horizontal",
-        legend.title = element_text(size = 15),
-        legend.text  = element_text(size = 11)) +
-  guides(color = guide_legend(reverse = TRUE),
-         shape = guide_legend(reverse = TRUE))
-```
-
-```{r, eval = F}
-#| eval: false
-
-hull_points4 <- scores %>%
-  group_by(cluster) %>%
-  slice(chull(PC1, PC4))
-
-# cluster plot with arrows and labels
-ggplot(scores, aes(x = PC1, y = PC4, color = cluster, shape = cluster)) +
-  geom_point(alpha = 0.4) +
-  theme_classic() +
-  ggtitle("MiniBatchKmeans Clusters (PCA projection)") +
-  geom_polygon(data = hull_points4, aes(fill = cluster), 
-               alpha = 0.1) +
-  theme_classic() +
-  geom_segment(data = cor_with_items,
-               aes(x = 0, y = 0, xend = PC1 * arrow_scale, yend = PC4 * arrow_scale),
-               arrow = arrow(length = unit(0.2,"cm")),
-               inherit.aes = FALSE, color = "black") +
-  ggrepel::geom_text_repel(data = cor_with_items,
-               aes(x = PC1 * (arrow_scale + 0.5),
-                   y = PC4 * (arrow_scale + 0.5),
-                   label = Variable),
-               inherit.aes = FALSE,
-               size = 5, color = "black", max.overlaps = 100) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") + 
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_color_discrete(labels = clusternames, name = "Cluster") +
-  scale_shape_discrete(labels = clusternames, name = "Cluster") +
-  guides(fill = "none") +
-  ggtitle('') +
-  theme(legend.position = "top",
-        legend.direction = "horizontal",
-        legend.title = element_text(size = 15),
-        legend.text  = element_text(size = 11)) +
-  guides(color = guide_legend(reverse = TRUE),
-         shape = guide_legend(reverse = TRUE))
-```
-
-
-```{r}
-cdat_nozerovar$kclusters4 = predict_KMeans(corrmat, k_means4$centroids)
-
-plot_data <- cdat_nozerovar %>%
-  pivot_longer(
-    cols = c(AltRock:Soul),  # all clustering variables
-    names_to = "Variable",
-    values_to = "Score"
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
   )
 
-plot_summary <- plot_data %>%
-  group_by(kclusters4, Variable) %>%
-  summarise(MeanScore = mean(Score, na.rm = TRUE), .groups = "drop")
+```
 
-ggplot(plot_summary, aes(x = Variable, y = MeanScore, group = kclusters4, color = factor(kclusters4))) +
-  geom_line(size = 1.1) +
-  geom_point(size = 2) +
-  facet_grid(~ kclusters4, scales = "free_y", labeller = labeller(kclusters4 = clusternames)) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10)
+## Biplot comparing to news gratifications
+
+```{r}
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(characteristics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+demo_cor <- cor(resp_scores[, c("PC1","PC2")],
+                resp_scores[, cont_vars],
+                use = "pairwise.complete.obs")
+demo_cor <- as.data.frame(t(demo_cor))
+colnames(demo_cor) <- c("PC1","PC2")
+demo_cor$Variable <- rownames(demo_cor)
+
+# Filter for most correlated variables
+demo_cor <- demo_cor %>%
+  filter(abs(PC1) > 0.00 | abs(PC2) > 0.00)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
   ) +
-  labs(y = "Average score (1–5)", x = "Concept", color = "Cluster")+
-  theme(legend.position = "top",                               
-        legend.direction = "horizontal",                       
-        legend.title = element_text(size = 12),                
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
         legend.text  = element_text(size = 11))+
-  coord_flip()
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  )
 
 ```
 
-### Cluster interpretation
 
-- 1: Mainstream Western Pop/Rock
-- 2: Niche/Eclectic/Experimental
-- 3: Mainstream Afro-diasporic
-- 4: Non-Mainstream Rock (Headbangers)
+## Biplot comparing to demographics
+
+```{r}
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(characteristics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(demos, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(demos), "ResponseId")
+demo_cor <- cor(resp_scores[, c("PC1","PC2")],
+                resp_scores[, cont_vars],
+                use = "pairwise.complete.obs")
+demo_cor <- as.data.frame(t(demo_cor))
+colnames(demo_cor) <- c("PC1","PC2")
+demo_cor$Variable <- rownames(demo_cor)
+
+# Filter for most correlated variables
+demo_cor <- demo_cor %>%
+  filter(abs(PC1) > 0.05 | abs(PC2) > 0.05)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  )
+
+```
