@@ -43,7 +43,7 @@ In the genre × genre matrix, similarity values capture shared audience bases be
 ```{r, fig.height=7, fig.width=7}
 #| title: Correlation Matrix
 
-dat = read_csv('Q20.csv') %>% 
+dat = read_csv('Music-Data.csv') %>% 
     drop_na()
 
 demos = read_csv('RUN-Demos.csv') %>%

@@ -21,7 +21,7 @@ pacman::p_load("tidyverse",
 ```
 
 ```{r}
-dat = read_csv('Q20.csv') %>% 
+dat = read_csv('Music-Data.csv') %>% 
     drop_na()
 
 

@@ -1,6 +1,8 @@
 ---
 title: "CSA Social Marketing: News Clusters"
-format: html
+format: 
+  html:
+    toc: true
 self-contained: true
 ---
 
@@ -125,9 +127,44 @@ fviz_cluster(k_means, corrmat, show.clust.cent = F) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey40")
 ```
 
-PC1 = Broad/Systemic Issues (left) vs. Everyday/Current Events (right)
-PC2 = Large scale (bottom) vs. Local scale (top) 
+### PC & Quadrant Interpretations
+These PC and quadrant interpretations reflect relations between the news topic clusters: what are the connecting threads between news topics in different parts of the news space? What dimensions differentiate between news topic clusters in this news space?
 
+
+- PC1 (Psychological Distance)
+  - ⬅️ Broad Systemic Issues 
+  - ➡️ Immediate/Current Civic Events
+- PC2 (Issue Scale)
+  - ⬆️ Local scale
+  - ⬇️ Large scale 
+
+
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Community & social infrastructure</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Civic & local daily life</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Analytical & global systems</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Political & public affairs</strong>
+      </td>
+    </tr>
+  </table>
+</div>.
+
+
+
+*Note: some clusters will cross quadrants. See Cluster 5 for example. Transportation and traffic being clustered together suggests these two topics are more related to each other than to other topics. But the transportation topic sits in the Social infrastructure/broad issue/local scale quadrant while traffit sits in the Everyday/Local scale quadrant. So within this cluster specifically about movement-related news topics, some are more large scale than others.*
+
+*Similarly within Cluster 2, Economy is closer to the analytical/global systems quadrant than its other connected topics (immigration, politics/gov, global affairs). Same thing with Climate and Environment compared to Housing/Homelessness and Social Justice within Cluster 1.*
 
 ## Biplot comparing to news gratifications
 
@@ -219,9 +256,40 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-PC1: uplift; improvement (left); pragmatic (right)
-PC2: communal, affective (up); cognitive (down)
+### PC & Quadrant Interpretations (for arrows)
 
+These PC and quadrant interpretations do not necessarily account for or need to exactly match the previous PC interpretations which are more about the relations between news topics. These  interpretations are more about the gratification arrows (what is news for? what do people hope to get out of it?). The critical insight here is how these gratifications orient when laid on top of the news topic space.
+
+You can compare to the previous news topic-based PC dimensions to see how these gratification-based dimensions relate to those. So while the dimensions themselves don't have to match, there will likely be functional or conceptual relationships and symmetries between the news topic PCs and these gratification PCs (if the data & analysis is capturing something meaningful).
+
+- PC1 (Function)
+  - ⬅️ Uplift/Improvement
+  - ➡️ Pragmatic
+- PC2 (Modality)
+  - ⬆️ Affective
+  - ⬇️ Cognitive/Intellectual
+
+
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>News as empowerment</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>News as daily tool</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>News as personal enrichment</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>News as moral-intellectual engagement</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## Biplot comparing to news characteristics
 
@@ -314,9 +382,31 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 ```
 
 PC1: creative, interpretive, diverse (left); factual, straightforward (right)
-OC2: light, entertaining (up); serious (down)
+PC2: light, entertaining (up); serious (down)
 
+PC1 distinguishes between “trusted, fact-based news” and “opinionated or affective news.”
 
+Right (+PC1): Credible, straightforward, civic
+
+Left (−PC1): Expressive, engaging, perspective-driven
+
+PC2 contrasts “serious, research-based journalism” (bottom) with “accessible and affective coverage” (top).
+
+If no arrows point toward the upper-right quadrant (i.e., high PC1 and high PC2), that means none of your news characteristics (the arrows) are positively associated with the combination of those two underlying dimensions.
+
+The lack of arrows in the upper-right quadrant suggests that local, civic, everyday news is viewed as practical but not tied to distinctive content qualities — neither exciting nor intellectually rich, just plain useful information.
+
+You might describe this area as the “neutral utility zone” of the news landscape — high in relevance, low in personality.
+
+What the absence of arrows there means
+
+If none of the arrows (qualities like entertaining, trustworthy, carefully researched, etc.) point toward that quadrant:
+
+Those qualities don’t align strongly with the kind of news that’s both local/civic and emotionally immediate.
+
+In other words, respondents don’t associate strong distinctive news “qualities” with this quadrant of topics (weather, local events, etc.).
+
+These topics may be seen as neutral, routine, or informational — not particularly entertaining, provocative, or deeply researched — just useful.
 
 ## Biplot comparing to demographics
 
@@ -405,6 +495,17 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
   ) 
 
 ```
+
+
+PC1 captures a demographic divide between “pragmatic traditionalists” (older, moderate, civic-oriented) and “analytical progressives” (younger, urban, educated).
+
+PC2 distinguishes “relational/emotional” engagement (female, lower-income, community-oriented) from “rational/informational” engagement (male, higher-income, globally oriented).
+
+Together, the space describes two demographic gradients:
+
+Age/education/political ideology along PC1,
+
+Gender/income orientation along PC2.
 
 # Clustering news gratifications
 
@@ -558,6 +659,34 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
+### PC1: Self-affirming ↔ Civic/functional
+
+Topics leaning right (positive PC1) → Weather, Local news, Politics, Global affairs, Crime.
+
+These are civic or everyday-life topics — practical, outward-facing.
+
+Topics leaning left (negative PC1) → Education, Technology, Transportation.
+
+These are systemic or analytical topics — more reflective or issue-oriented.
+
+➡️ Interpretation:
+
+PC1 separates individual reflection / complexity (education, technology) from public-facing, utilitarian, civic news (weather, politics, local).
+
+### PC2: Practical ↔ Emotional/moral
+
+Nearly every topic has positive PC2 correlations — but some are distinctly higher:
+
+Social justice (+0.24), Housing (+0.20), Climate (+0.17), Education (+0.16), Science (+0.13).
+
+These are community-impact / moral-purpose topics — they resonate with empathy and social good.
+
+Lower PC2 (≈0): Weather, Politics, Local events — factual or pragmatic.
+
+➡️ Interpretation:
+
+PC2 represents how much a topic evokes moral, empathic, or humanistic engagement rather than pragmatic utility.
+
 
 ## Biplot comparing to news characteristics
 
@@ -647,6 +776,25 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
+Nearly all valued news qualities align with emotion and meaning, not cold cognition.
+
+The main fault line is personal vs. civic orientation (PC1):
+
+Identity-based enjoyment (entertaining, partisan, familiar) vs.
+
+Civic-informational integrity (balanced, trustworthy, perspective-broadening).
+
+PC2 adds a second layer — within both camps, people prize emotional or moral resonance over detached utility.
+
+In the news gratifications space, people see news quality not as “useful vs. not useful,” but as serving two kinds of meaning:
+
+On one side, self-expression and affirmation (entertaining, values-aligned news).
+
+On the other, civic and moral engagement (trustworthy, balanced, perspective-broadening news).
+
+Both are emotionally loaded — but differ in who the emotion serves: the self or the public.
+
+
 ## Biplot comparing to demographics
 
 ```{r}
@@ -734,6 +882,12 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
   )
 
 ```
+
+PC1 may reflect a generational divide:
+
+Boomers = civic sense-making; Millennials = identity-driven meaning-making.
+
+PC2 may distinguish moral-emotional engagement vs. utilitarian use of news.
 
 
 # Clustering news characteristics
@@ -886,6 +1040,32 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
+### PC1 (x-axis): Journalistic integrity ↔ Emotional–partisan
+
+Nearly all topics are on the positive (trustworthy) side of PC1.
+
+The strongest on that side:
+→ Global affairs, Local news, Weather, Politics, Science.
+
+The few at or slightly below zero (Education, Technology, Sports) are lighter, more human-interest or practical rather than high-seriousness.
+
+➡️ Interpretation:
+Respondents associate most news topics with “serious, fact-based, trustworthy” qualities rather than “partisan or entertaining.”
+Only sports and education fall slightly toward the softer side.
+
+### PC2 (y-axis): Comforting / Familiar ↔ Challenging / Novel
+
+PC2 is mostly negative across topics (−0.10 to +0.05).
+So, most arrows point downward, toward the “challenging” end.
+
+The few positive outliers (Weather, Politics, Local) are familiar, routine, comforting topics.
+
+The negative ones (Climate, Housing, Technology, Education) are more cognitively or morally demanding.
+
+➡️ Interpretation:
+People see certain “issue” topics as stretching or challenging (climate, housing, tech, education), whereas local, weather, and political coverage feels habitual, predictable, or reassuring.
+
+
 ## Biplot comparing to news gratifications
 
 ```{r}
@@ -973,6 +1153,30 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
   )
 
 ```
+
+### PC1: Journalistic integrity ↔ Entertainment/partisan appeal
+
+Positive PC1 (right): “Exposes me to other viewpoints,” “Prepares me for public life,” “Helps me empathize.”
+→ These gratifications align with civic-minded, informative, trust-based news.
+
+Negative PC1 (left): “Aligns with my values,” “Makes me feel seen and heard,” “Makes me feel smart.”
+→ These point toward personal validation, identity expression, and affective reward rather than information quality.
+
+🧠 Interpretation:
+
+PC1 differentiates informational and civic gratifications (right) from identity and self-affirming gratifications (left).
+
+### PC2: Comforting/familiar ↔ Challenging/novel
+
+Negative PC2 (down): Most arrows point downward here — “Exposes me to other viewpoints,” “Helps me empathize,” “Become better person.”
+→ These link to news that challenges or broadens understanding.
+
+Positive PC2 (up): Only “Aligns with my own values” has a clear positive score.
+→ This one connects with comforting or familiar news — that reinforces one’s worldview.
+
+🧠 Interpretation:
+
+PC2 separates comforting, worldview-affirming engagement (up) from learning and moral challenge (down).
 
 
 ## Biplot comparing to demographics
@@ -1062,3 +1266,25 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
   )
 
 ```
+
+### PC1: Serious / trustworthy ↔ Partisan / entertaining
+
+Positive (right): Boomers, Whites, civically or culturally engaged, liberals → traditional journalism trusters.
+They gravitate toward balanced, fact-based news.
+
+Negative (left): Millennials, Gen Z, conservatives, low-engagement respondents → partisan or affective consumers.
+They’re more drawn to opinionated, emotive, or personality-driven news.
+
+🧠 Interpretation:
+
+PC1 divides traditional trust-oriented audiences from expressive, identity-based news consumers.
+
+### PC2: Comforting / familiar ↔ Challenging / novel
+
+Positive (up): Boomers, Whites, less urban → comforting, predictable, reassuring news preferences.
+
+Negative (down): Black respondents, urban, younger cohorts → open to novel, critical, or challenging journalism.
+
+🧠 Interpretation:
+
+PC2 separates comfort-seeking, familiar news users from those who seek new or challenging perspectives.
