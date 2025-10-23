@@ -29,8 +29,6 @@ pacman::p_load("tidyverse",
 
 "Which topics are alike in terms of their audiences?"
 
-## Correlation Matrix
-
 ```{r, fig.height=7, fig.width=7}
 #| title: Correlation Matrix
 
@@ -84,17 +82,16 @@ corrmat <- topics %>%
 ```{r}
 #| title: Optimal number of clusters
 
-fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") +
-fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
+fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") 
+# fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
 ```
-
-## Hierarchical Clustering 
 
 ```{r}
 #| title: HCLust 4
 #| fig.width: 12
 #| fig.height: 10
 #| fig.asp: null
+#| eval: false
 
 #run hierarchical clustering
 hc = hclust(dist(corrmat), method = 'ward.D')
@@ -112,7 +109,7 @@ heatmaply(corrmat,
   column_text_angle = 90)
 ```
 
-## K Means 
+## K Means Clusters in PCA Space
 
 ```{r}
 #| title: K Means
@@ -285,7 +282,7 @@ You can compare to the previous news topic-based PC dimensions to see how these 
         ↙️<br><strong>News as personal enrichment</strong>
       </td>
       <td style="border:1px solid black; padding:10px;">
-        ↘️<br><strong>News as moral-intellectual engagement</strong>
+        ↘️<br><strong>News as moral-intellectual information</strong>
       </td>
     </tr>
   </table>
@@ -381,32 +378,41 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-PC1: creative, interpretive, diverse (left); factual, straightforward (right)
-PC2: light, entertaining (up); serious (down)
+### PC and Quadrant Interpretations (for arrows)
 
-PC1 distinguishes between “trusted, fact-based news” and “opinionated or affective news.”
+ These PC and quadrant interpretations are about the characteristic arrows (what qualities of the news do people seek/like?). How do these news characteristic preferences orient when laid on top of the news topic space.
 
-Right (+PC1): Credible, straightforward, civic
+- PC1 (Epistemic)
+  - ⬅️ Opinionated/Entertaining
+  - ➡️ Factual/Informational
+- PC2 (Tone)
+  - ⬆️ Affective
+  - ⬇️ Analytical
 
-Left (−PC1): Expressive, engaging, perspective-driven
 
-PC2 contrasts “serious, research-based journalism” (bottom) with “accessible and affective coverage” (top).
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Opinionated engaging news</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Purely practical news</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Analytical/perspective news</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Serious news</strong>
+      </td>
+    </tr>
+  </table>
+</div>.
 
-If no arrows point toward the upper-right quadrant (i.e., high PC1 and high PC2), that means none of your news characteristics (the arrows) are positively associated with the combination of those two underlying dimensions.
 
-The lack of arrows in the upper-right quadrant suggests that local, civic, everyday news is viewed as practical but not tied to distinctive content qualities — neither exciting nor intellectually rich, just plain useful information.
-
-You might describe this area as the “neutral utility zone” of the news landscape — high in relevance, low in personality.
-
-What the absence of arrows there means
-
-If none of the arrows (qualities like entertaining, trustworthy, carefully researched, etc.) point toward that quadrant:
-
-Those qualities don’t align strongly with the kind of news that’s both local/civic and emotionally immediate.
-
-In other words, respondents don’t associate strong distinctive news “qualities” with this quadrant of topics (weather, local events, etc.).
-
-These topics may be seen as neutral, routine, or informational — not particularly entertaining, provocative, or deeply researched — just useful.
+*Note: no arrows point to upper-right quadrant, which means none of the news characteristics are positively associated with the combination of dimensions: factual/information + affectvive. Suggests everyday news is viewed as practical but not tied to distinctive content qualities — neither exciting nor intellectually rich, just plain useful information — high in relevance, low in personality.*
 
 ## Biplot comparing to demographics
 
@@ -496,16 +502,18 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
+### PC and Quadrant Interpretations (for arrows)
 
-PC1 captures a demographic divide between “pragmatic traditionalists” (older, moderate, civic-oriented) and “analytical progressives” (younger, urban, educated).
+ These PC and quadrant interpretations are about the demographic arrows, how do respondent demographics orient when laid on top of the news topic space.
 
-PC2 distinguishes “relational/emotional” engagement (female, lower-income, community-oriented) from “rational/informational” engagement (male, higher-income, globally oriented).
+- PC1 (Age/politics)
+  - ⬅️ Younger, diverse progressives
+  - ➡️ Older, whiter, traditionalists
+- PC2 (Gender/income/education)
+  - ⬆️ Less well-off
+  - ⬇️ More well-off
 
-Together, the space describes two demographic gradients:
 
-Age/education/political ideology along PC1,
-
-Gender/income orientation along PC2.
 
 # Clustering news gratifications
 
