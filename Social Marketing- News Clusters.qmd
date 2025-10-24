@@ -513,11 +513,30 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
   - ⬆️ Less well-off
   - ⬇️ More well-off
 
-
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Less Well Off Progressives</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Less Well Off Traditionalists</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Well Off Progressives</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Well Off Traditionalists</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 # Clustering news gratifications
 
-"Which gratifications are alike in terms of their seekers?"
+"Which gratifications are alike in terms of their needers?"
 
 ```{r}
 # Create correlation matrix
@@ -531,17 +550,16 @@ corrmat <- gratifications %>%
 ```{r}
 #| title: Optimal number of clusters
 
-fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") +
-fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
+fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") 
+# fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
 ```
-
-## Hierarchical clustering
 
 ```{r}
 #| title: HCLust 4
 #| fig.width: 12
 #| fig.height: 10
 #| fig.asp: null
+#| eval: false
 
 #run hierarchical clustering
 hc = hclust(dist(corrmat), method = 'ward.D')
@@ -576,8 +594,36 @@ fviz_cluster(k_means, corrmat, show.clust.cent = F) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey40")
 ```
 
-PC1 = Self-enhacement/affirming (left) vs. Civic-altruistic (right)
-PC2 = Affective/Moral (Top) vs. Cognitive/Pragmatic (Bottom)
+### PC and Quadrant Interpretations
+
+- PC1 (Orientation)
+  - ⬅️ Self-enhancement/Affirming
+  - ➡️ Civic/Relational
+- PC2 (Function)
+  - ⬆️ Affective/Moral
+  - ⬇️ Cognitive/Pragmatic
+
+
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Self Uplift</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Communal Connection</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Intellectual Affirmation</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Civic Pragmatism</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## Biplot comparing to news topics
 
@@ -667,33 +713,36 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-### PC1: Self-affirming ↔ Civic/functional
+### PC and Quadrant Interpretations (for arrows)
 
-Topics leaning right (positive PC1) → Weather, Local news, Politics, Global affairs, Crime.
+- PC1 (Psychological Distance)
+  - ⬅️ Broad systemtic issues
+  - ➡️ Immediate/Current Civic Events
+- PC2 (Function)
+  - ⬆️ Moral?
+  - ⬇️ Practical??
 
-These are civic or everyday-life topics — practical, outward-facing.
 
-Topics leaning left (negative PC1) → Education, Technology, Transportation.
-
-These are systemic or analytical topics — more reflective or issue-oriented.
-
-➡️ Interpretation:
-
-PC1 separates individual reflection / complexity (education, technology) from public-facing, utilitarian, civic news (weather, politics, local).
-
-### PC2: Practical ↔ Emotional/moral
-
-Nearly every topic has positive PC2 correlations — but some are distinctly higher:
-
-Social justice (+0.24), Housing (+0.20), Climate (+0.17), Education (+0.16), Science (+0.13).
-
-These are community-impact / moral-purpose topics — they resonate with empathy and social good.
-
-Lower PC2 (≈0): Weather, Politics, Local events — factual or pragmatic.
-
-➡️ Interpretation:
-
-PC2 represents how much a topic evokes moral, empathic, or humanistic engagement rather than pragmatic utility.
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Systemic Issues News</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Current Events/Immediate News</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>-</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>-</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 
 ## Biplot comparing to news characteristics
@@ -784,23 +833,38 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-Nearly all valued news qualities align with emotion and meaning, not cold cognition.
+### PC and Quadrant Interpretations (for arrows)
 
-The main fault line is personal vs. civic orientation (PC1):
+- PC1 (Psychological Distance)
+  - ⬅️ Partisan/Entertaining
+  - ➡️ Factual
+- PC2 (Function)
+  - ⬆️ ?
+  - ⬇️ ?
 
-Identity-based enjoyment (entertaining, partisan, familiar) vs.
 
-Civic-informational integrity (balanced, trustworthy, perspective-broadening).
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Partisan/Entertaining News</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Factual News</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>-</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>-</strong>
+      </td>
+    </tr>
+  </table>
+</div>.
 
-PC2 adds a second layer — within both camps, people prize emotional or moral resonance over detached utility.
-
-In the news gratifications space, people see news quality not as “useful vs. not useful,” but as serving two kinds of meaning:
-
-On one side, self-expression and affirmation (entertaining, values-aligned news).
-
-On the other, civic and moral engagement (trustworthy, balanced, perspective-broadening news).
-
-Both are emotionally loaded — but differ in who the emotion serves: the self or the public.
+Partisan/Entertaining news = Uplift/Self Affirming; Factual news = Civic Moral
 
 
 ## Biplot comparing to demographics
@@ -891,12 +955,40 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-PC1 may reflect a generational divide:
+### PC & Quadrant Interpretations (for arrows)
 
-Boomers = civic sense-making; Millennials = identity-driven meaning-making.
+- PC1 (Age)
+  - ⬅️ Millenial
+  - ➡️ Boomer
+- PC2 (Societal Engagement)
+  - ⬆️ High Engagement
+  - ⬇️ Low Engagement
 
-PC2 may distinguish moral-emotional engagement vs. utilitarian use of news.
 
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Highly engaged Millenials</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Highly engaged Boomers</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Low engaged Millenials</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Low engaged Boomers</strong>
+      </td>
+    </tr>
+  </table>
+</div>.
+
+Millenials = identity-driven needs; Boomers = civic sense making needs
+
+High engagemnet = moral needs; Low engagement = practical needs
 
 # Clustering news characteristics
 
@@ -914,17 +1006,16 @@ corrmat <- characteristics %>%
 ```{r}
 #| title: Optimal number of clusters
 
-fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") +
-fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
+fviz_nbclust(corrmat, kmeans, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "K Means") 
+# fviz_nbclust(corrmat, hcut, method = "silhouette") + ggtitle(label = 'Optimal number of clusters', subtitle = "Hierarchical clustering")
 ```
-
-## Hierarchical clustering
 
 ```{r}
 #| title: HCLust 4
 #| fig.width: 12
 #| fig.height: 10
 #| fig.asp: null
+#| eval: false
 
 #run hierarchical clustering
 hc = hclust(dist(corrmat), method = 'ward.D')
@@ -959,6 +1050,36 @@ fviz_cluster(k_means, corrmat, show.clust.cent = F) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey40")
 ```
 
+### PC and Quadrant Interpretations
+
+- PC1 (Information type)
+  - ⬅️ Partisan/Personality
+  - ➡️ Credible
+- PC2 (Worldview)
+  - ⬆️ Familiar/Comfortable
+  - ⬇️ Challenging/Novel
+
+
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Comfortable & Partisan</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Credible and Familiar</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Challenging and Entertaining</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Novel and Credible</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## Biplot comparing to news topics
 
@@ -1048,30 +1169,38 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-### PC1 (x-axis): Journalistic integrity ↔ Emotional–partisan
+### PC and Quadrant Interpretations (for arrows)
 
-Nearly all topics are on the positive (trustworthy) side of PC1.
+- PC1 (Information type)
+  - ⬅️ Entertaining
+  - ➡️ Trustworthy
+- PC2 (Psychological Distance)
+  - ⬆️ Immediate/Current Civic Events
+  - ⬇️ Broad Systemic Issues
 
-The strongest on that side:
-→ Global affairs, Local news, Weather, Politics, Science.
 
-The few at or slightly below zero (Education, Technology, Sports) are lighter, more human-interest or practical rather than high-seriousness.
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Comfortable & Partisan</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>Credible and Familiar</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Challenging and Entertaining</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Novel and Credible</strong>
+      </td>
+    </tr>
+  </table>
+</div>.
 
-➡️ Interpretation:
-Respondents associate most news topics with “serious, fact-based, trustworthy” qualities rather than “partisan or entertaining.”
-Only sports and education fall slightly toward the softer side.
-
-### PC2 (y-axis): Comforting / Familiar ↔ Challenging / Novel
-
-PC2 is mostly negative across topics (−0.10 to +0.05).
-So, most arrows point downward, toward the “challenging” end.
-
-The few positive outliers (Weather, Politics, Local) are familiar, routine, comforting topics.
-
-The negative ones (Climate, Housing, Technology, Education) are more cognitively or morally demanding.
-
-➡️ Interpretation:
-People see certain “issue” topics as stretching or challenging (climate, housing, tech, education), whereas local, weather, and political coverage feels habitual, predictable, or reassuring.
+Respondents associate most news topics with fact-based, credible qualities rather than partisan or entertaining, with exception of sports. The few pointing up (weather, local, politics) are more habitual current events, the rest pointing down are more challenging.
 
 
 ## Biplot comparing to news gratifications
@@ -1162,29 +1291,36 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-### PC1: Journalistic integrity ↔ Entertainment/partisan appeal
+### PC and Quadrant Interpretations (for arrows)
 
-Positive PC1 (right): “Exposes me to other viewpoints,” “Prepares me for public life,” “Helps me empathize.”
-→ These gratifications align with civic-minded, informative, trust-based news.
+- PC1 (Orientation)
+  - ⬅️ Self-Affirming
+  - ➡️ Civic/Relational
+- PC2 (Worldview)
+  - ⬆️ Validates
+  - ⬇️ Challenges
 
-Negative PC1 (left): “Aligns with my values,” “Makes me feel seen and heard,” “Makes me feel smart.”
-→ These point toward personal validation, identity expression, and affective reward rather than information quality.
 
-🧠 Interpretation:
-
-PC1 differentiates informational and civic gratifications (right) from identity and self-affirming gratifications (left).
-
-### PC2: Comforting/familiar ↔ Challenging/novel
-
-Negative PC2 (down): Most arrows point downward here — “Exposes me to other viewpoints,” “Helps me empathize,” “Become better person.”
-→ These link to news that challenges or broadens understanding.
-
-Positive PC2 (up): Only “Aligns with my own values” has a clear positive score.
-→ This one connects with comforting or familiar news — that reinforces one’s worldview.
-
-🧠 Interpretation:
-
-PC2 separates comforting, worldview-affirming engagement (up) from learning and moral challenge (down).
+<div style="text-align:center;">
+  <table style="width:70%; margin:auto; text-align:center; border-collapse:collapse; border:1px solid black;">
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↖️<br><strong>Validating news</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↗️<br><strong>-</strong>
+      </td>
+    </tr>
+    <tr>
+      <td style="border:1px solid black; padding:10px;">
+        ↙️<br><strong>Challenging-Moral news</strong>
+      </td>
+      <td style="border:1px solid black; padding:10px;">
+        ↘️<br><strong>Self-Enhancing news</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 
 ## Biplot comparing to demographics
@@ -1275,24 +1411,6 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
-### PC1: Serious / trustworthy ↔ Partisan / entertaining
+PC1 divides traditional trust-oriented audiences (right) from expressive, personality-based news consumers (left)
 
-Positive (right): Boomers, Whites, civically or culturally engaged, liberals → traditional journalism trusters.
-They gravitate toward balanced, fact-based news.
-
-Negative (left): Millennials, Gen Z, conservatives, low-engagement respondents → partisan or affective consumers.
-They’re more drawn to opinionated, emotive, or personality-driven news.
-
-🧠 Interpretation:
-
-PC1 divides traditional trust-oriented audiences from expressive, identity-based news consumers.
-
-### PC2: Comforting / familiar ↔ Challenging / novel
-
-Positive (up): Boomers, Whites, less urban → comforting, predictable, reassuring news preferences.
-
-Negative (down): Black respondents, urban, younger cohorts → open to novel, critical, or challenging journalism.
-
-🧠 Interpretation:
-
-PC2 separates comfort-seeking, familiar news users from those who seek new or challenging perspectives.
+PC2 separates comfort-seeking, familiar news users (top) from those who seek new or challenging perspectives (bottom)
