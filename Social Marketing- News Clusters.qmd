@@ -1414,3 +1414,1451 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 PC1 divides traditional trust-oriented audiences (right) from expressive, personality-based news consumers (left)
 
 PC2 separates comfort-seeking, familiar news users (top) from those who seek new or challenging perspectives (bottom)
+
+
+# Exploring different arrow filters
+
+For these experiments, I am looking for a method that can reliably identify the most important arrows to plot on the biplots. We don't want to show noise on the plots, and more simplified plots that only show most statistically reliable information will be more useful to our audience and for interpretation.
+
+For this experiment, I will do the following tests on the same dataset to see how the results change: 
+
+1. Correlation test p values: 
+  - Simple and independent univariate tests of the correlations between each arrow and PC1 and PC2. 
+  - Pro: fast and easy to implement
+  - Con: ignores multivariate relations (between variables and PC1/PC2) and issues with p values (e.g., large samples can result in significant p values for very small correlations)
+
+2. Regression-based p values:
+  - The PCs are regressed on the data from each arrow independently. The p values for PC1 and PC2 regressors are saved and filtered for significance
+  - Pro: can account for multivariate PC relations than univariate tests
+  - Con: Same issues with p values (small relationships can be significant with large samples), direction of regression is arbitrary (no causal claims can be made).
+
+3. Bootstrap stability:
+  - Respondents are randomly resampled (with replacement) N times, each time recomputing the arrow correlations with PC1 and PC2. Check for the consistency in arrow direction and magnitude (based on a minimum correlation threshold).
+  - Pro: measures consistency across different portions of the same sample
+  - Con: slow and computationally expensive
+
+4. Permutation test:
+  - PC scores are randomly permuted (shuffled) N times and correlated with the arrows, this creates a correlation null distribution of what correlation values can be expected from the data if it was meaningless noise (due to shuffling the scores around). Observed correlations (from the actual data) that are far enough away from the null distribution are statistically meaningful. 
+  - Pro: controls for multiple tests, statistically most sound option for inference
+  - Con: also slow and computationally expensive
+
+5. Vector length threshold:
+  - Arrows are filtered explicitly by a correlation threshold decided by researcher. 
+  - Pro: simple and easy to implement, researcher decides what size correlation is meaningful (compared to p value-based filtering which might keep small but significant correlations)
+  - Con: can be arbitrary, not statistically sound
+
+6. Dual PCA:
+  - Instead of plotting each arrow independently, we can reduce them to their PC1 and PC2 components and plot those instead. So there are two PCAs, one on the main data and one on the second data (arrows) and plotting PC arrows on PC space allows us to compare how the two datasets' dimensionalities are related. In this way, it's not just another option, but actually another way to analyze the data
+  - Pros: Can directly relate more latent/meaningful clusters that provide more concise summary of the relations between different questions
+  - Cons: Results are more abstracted from the raw data, so it might be harder for audiences to understand (but can be figured out with good storytelling). Might also over-summarize if the individual item arrows are more nuanced and interpretable.
+
+7. Dual Combo PCA:
+  - Same as dual PCA, but plots the individual arrows as well as the PC arrows on the same plot so you can see the full details.
+  - Pros: Can see the individual arrow directions which may not exactly match the summarized PC arrows
+  - Cons: Could be a messy plot
+
+The main dataset will be the news topics. The second dataset will be news gratifications (13 total arrows)
+
+```{r}
+filter_arrows <- function(resp_scores, cont_vars,
+                          method = "pval",
+                          alpha = 0.05,
+                          vector_thresh = 0.1,
+                          n_boot = 500,
+                          n_perm = 1000,
+                          verbose = TRUE,
+                          dual_pca_filter = F,
+                          second_type = 'Second Data Type',
+                          pc_names = c("Secondary PC1 +", "Secondary PC2 +", "Secondary PC1 -", "Secondary PC2 -")) {
+
+  if (!all(c("PC1", "PC2") %in% names(resp_scores))) {
+    stop("resp_scores must contain PC1 and PC2 columns")
+  }
+
+  # --- Common correlation step ---
+  demo_cor <- cor(resp_scores[, c("PC1","PC2")],
+                  resp_scores[, cont_vars],
+                  use = "pairwise.complete.obs")
+  demo_cor <- as.data.frame(t(demo_cor))
+  colnames(demo_cor) <- c("PC1","PC2")
+  demo_cor$Variable <- rownames(demo_cor)
+
+  # ==========================================================
+  # ============== FILTERING METHODS =========================
+  # ==========================================================
+
+  if (method == "pval") {
+    # ---- 1. Correlation p-values ----
+    pval_mat <- matrix(NA, nrow = length(cont_vars), ncol = 2,
+                       dimnames = list(cont_vars, c("PC1","PC2")))
+    for (v in cont_vars) {
+      test1 <- cor.test(resp_scores$PC1, resp_scores[[v]], use = "pairwise.complete.obs")
+      test2 <- cor.test(resp_scores$PC2, resp_scores[[v]], use = "pairwise.complete.obs")
+      pval_mat[v, "PC1"] <- test1$p.value
+      pval_mat[v, "PC2"] <- test2$p.value
+    }
+    demo_cor <- demo_cor %>%
+      mutate(p_PC1 = pval_mat[Variable, "PC1"],
+             p_PC2 = pval_mat[Variable, "PC2"]) %>%
+      filter(p_PC1 < alpha | p_PC2 < alpha)
+
+  } else if (method == "regression") {
+    # ---- 2. Regression p-values ----
+    reg_results <- lapply(cont_vars, function(v) {
+      fit <- lm(scale(resp_scores[[v]]) ~ PC1 + PC2, data = resp_scores)
+      cs <- summary(fit)$coefficients
+      data.frame(
+        Variable = v,
+        p_PC1 = cs["PC1","Pr(>|t|)"],
+        p_PC2 = cs["PC2","Pr(>|t|)"]
+      )
+    })
+    reg_df <- bind_rows(reg_results)
+    demo_cor <- demo_cor %>%
+      left_join(reg_df, by = "Variable") %>%
+      filter(p_PC1 < alpha | p_PC2 < alpha)
+
+  } else if (method == "vector") {
+    # ---- 3. Vector length threshold ----
+    demo_cor <- demo_cor %>%
+      mutate(length = sqrt(PC1^2 + PC2^2)) %>%
+      filter(length > vector_thresh)
+
+  } else if (method == "bootstrap") {
+    # ---- 4. Bootstrap stability ----
+    boot_mat <- matrix(0, nrow = length(cont_vars), ncol = 2)
+    colnames(boot_mat) <- c("PC1","PC2")
+    rownames(boot_mat) <- cont_vars
+
+    if (verbose) cat("Running", n_boot, "bootstraps...\n")
+    n <- nrow(resp_scores)
+
+    for (b in seq_len(n_boot)) {
+      idx <- sample(seq_len(n), replace = TRUE)
+      boot_cor <- cor(resp_scores[idx, c("PC1","PC2")],
+                      resp_scores[idx, cont_vars],
+                      use = "pairwise.complete.obs")
+      boot_mat <- boot_mat + (abs(t(boot_cor)) > vector_thresh)
+      if (verbose && b %% 50 == 0) cat(".")
+    }
+
+    stability <- boot_mat / n_boot
+    demo_cor$stability_PC1 <- stability[demo_cor$Variable, "PC1"]
+    demo_cor$stability_PC2 <- stability[demo_cor$Variable, "PC2"]
+    demo_cor <- demo_cor %>%
+      filter(stability_PC1 > 0.8 | stability_PC2 > 0.8)
+
+  } else if (method == "pca") {
+    # ---- 5. Dual PCA ----
+    # ---- Dual PCA (corrected for correlation-based PCA) ----
+
+    # 1. Compute correlation matrix among the arrow variables
+    demo_cor_mat <- cor(resp_scores[, cont_vars], use = "pairwise.complete.obs")
+
+    # 2. Eigen decomposition (PCA on correlation matrix)
+    demo_eig <- eigen(demo_cor_mat)
+
+    # 3. Compute respondent scores for the first two demo PCs
+    demo_scores <- as.matrix(scale(resp_scores[, cont_vars])) %*% demo_eig$vectors[, 1:2]
+    colnames(demo_scores) <- c("Demo_PC1", "Demo_PC2")
+
+    # 4. Correlate main PCA scores with demo PCA scores
+    demo_cor_base <- cor(resp_scores[, c("PC1","PC2")],
+                        demo_scores,
+                        use = "pairwise.complete.obs")
+
+    # 5. Get two "meta-arrow" vectors (positive side of Demo_PC1 and Demo_PC2)
+    demo_cor <- as.data.frame(t(demo_cor_base))
+    colnames(demo_cor) <- c("PC1", "PC2")
+
+    # 6. Add the corresponding negative counterparts
+    demo_cor_neg <- demo_cor
+    demo_cor_neg[, c("PC1","PC2")] <- -demo_cor_neg[, c("PC1","PC2")]
+
+    # 7. Stack positive and negative directions
+    demo_cor <- rbind(demo_cor, demo_cor_neg)
+    demo_cor$Variable <- c("Demo_PC1 +", "Demo_PC2 +", "Demo_PC1 -", "Demo_PC2 -")
+
+    # 8. Apply user-provided labels if given
+    if (!is.null(pc_names) && length(pc_names) == 4) {
+      demo_cor$Variable <- pc_names
+    }
+
+    # (Optional) make it an ordered factor for plotting
+    demo_cor <- demo_cor %>%
+      mutate(Variable = factor(Variable, levels = pc_names))
+
+  } else if (method == "perm") {
+    # ---- 6. Permutation test for correlations ----
+    if (verbose) cat("Running", n_perm, "permutations...\n")
+    n <- nrow(resp_scores)
+
+    perm_thresholds <- data.frame(Variable = cont_vars,
+                                  thresh_PC1 = NA,
+                                  thresh_PC2 = NA)
+
+    for (v in cont_vars) {
+      # observed correlations
+      obs_PC1 <- cor(resp_scores$PC1, resp_scores[[v]], use = "pairwise.complete.obs")
+      obs_PC2 <- cor(resp_scores$PC2, resp_scores[[v]], use = "pairwise.complete.obs")
+
+      # null distributions
+      perm_cor1 <- replicate(n_perm, cor(sample(resp_scores$PC1), resp_scores[[v]], use = "pairwise.complete.obs"))
+      perm_cor2 <- replicate(n_perm, cor(sample(resp_scores$PC2), resp_scores[[v]], use = "pairwise.complete.obs"))
+
+      # thresholds
+      perm_thresholds[perm_thresholds$Variable == v, "thresh_PC1"] <-
+        quantile(abs(perm_cor1), 1 - alpha)
+      perm_thresholds[perm_thresholds$Variable == v, "thresh_PC2"] <-
+        quantile(abs(perm_cor2), 1 - alpha)
+
+      demo_cor[demo_cor$Variable == v, "perm_sig_PC1"] <-
+        abs(obs_PC1) > perm_thresholds[perm_thresholds$Variable == v, "thresh_PC1"]
+      demo_cor[demo_cor$Variable == v, "perm_sig_PC2"] <-
+        abs(obs_PC2) > perm_thresholds[perm_thresholds$Variable == v, "thresh_PC2"]
+
+      if (verbose && v == cont_vars[round(length(cont_vars)/2)]) cat(".")
+    }
+
+    demo_cor <- demo_cor %>%
+      filter(perm_sig_PC1 | perm_sig_PC2)
+  } else if (method == "pca_combo") {
+    # ---- Dual PCA Combo: show both individual and PC arrows ----
+    # Produces both:
+    #   (a) all individual demo-variable arrows
+    #   (b) ± Demo_PC1 and Demo_PC2 "meta-arrows" (larger, labeled via pc_names)
+
+    # 1. Compute correlation matrix among arrow variables
+    demo_cor_mat <- cor(resp_scores[, cont_vars], use = "pairwise.complete.obs")
+
+    # 2. Eigen decomposition of correlation matrix
+    demo_eig <- eigen(demo_cor_mat)
+
+    # 3. Compute respondent scores for the first two demo PCs
+    demo_scores <- as.matrix(scale(resp_scores[, cont_vars])) %*% demo_eig$vectors[, 1:2]
+    colnames(demo_scores) <- c("Demo_PC1", "Demo_PC2")
+
+    # 4. Correlate main PCA scores with individual demo variables (fine-grained arrows)
+    demo_cor_indiv <- cor(resp_scores[, c("PC1","PC2")],
+                          resp_scores[, cont_vars],
+                          use = "pairwise.complete.obs")
+    demo_cor_indiv <- as.data.frame(t(demo_cor_indiv))
+    colnames(demo_cor_indiv) <- c("PC1", "PC2")
+    demo_cor_indiv$Variable <- rownames(demo_cor_indiv)
+    demo_cor_indiv$Type <- "Variable"
+
+    # ---- Optional bootstrap filter ----
+    if (isTRUE(dual_pca_filter)) {
+      if (verbose) cat("Running bootstrap filter on individual arrows...\n")
+      n_boot <- ifelse(exists("n_boot"), n_boot, 500)
+      n <- nrow(resp_scores)
+      boot_mat <- matrix(0, nrow = length(cont_vars), ncol = 2,
+                        dimnames = list(cont_vars, c("PC1", "PC2")))
+
+      for (b in seq_len(n_boot)) {
+        idx <- sample(seq_len(n), replace = TRUE)
+        boot_cor <- cor(resp_scores[idx, c("PC1","PC2")],
+                        resp_scores[idx, cont_vars],
+                        use = "pairwise.complete.obs")
+        boot_mat <- boot_mat + (abs(t(boot_cor)) > 0.1)
+        if (verbose && b %% 50 == 0) cat(".")
+      }
+      if (verbose) cat("\n")
+
+      stability <- boot_mat / n_boot
+      demo_cor_indiv$stability_PC1 <- stability[demo_cor_indiv$Variable, "PC1"]
+      demo_cor_indiv$stability_PC2 <- stability[demo_cor_indiv$Variable, "PC2"]
+
+      demo_cor_indiv <- demo_cor_indiv %>%
+        filter(stability_PC1 > 0.8 | stability_PC2 > 0.8)
+    }
+
+
+    # 5. Correlate main PCA scores with the demo PCA scores (meta-arrows)
+    demo_cor_meta <- cor(resp_scores[, c("PC1","PC2")],
+                        demo_scores,
+                        use = "pairwise.complete.obs")
+    demo_cor_meta <- as.data.frame(t(demo_cor_meta))
+    colnames(demo_cor_meta) <- c("PC1", "PC2")
+
+    # 6. Add negative counterparts for ± directions
+    demo_cor_meta_neg <- demo_cor_meta
+    demo_cor_meta_neg[, c("PC1","PC2")] <- -demo_cor_meta_neg[, c("PC1","PC2")]
+
+    # Combine positive and negative meta-arrows
+    demo_cor_meta <- rbind(demo_cor_meta, demo_cor_meta_neg)
+    demo_cor_meta$Type <- "PC"
+
+    # 7. Label meta-arrows
+    if (!is.null(pc_names) && length(pc_names) == 4) {
+      demo_cor_meta$Variable <- pc_names
+    } else {
+      demo_cor_meta$Variable <- c("Demo_PC1 +", "Demo_PC2 +",
+                                  "Demo_PC1 -", "Demo_PC2 -")
+    }
+
+    # 8. Combine individual + meta arrows
+    demo_cor <- bind_rows(demo_cor_indiv, demo_cor_meta)
+
+    # 9. Add group column for faceting
+    demo_cor <- demo_cor %>% 
+      mutate(Group = ifelse(Type == "Variable", second_type, "Meta-PC")) %>% 
+      mutate(Group = factor(Group, levels = c(second_type, "Meta-PC")))
+
+  } else {
+    stop("method must be one of: 'pval', 'regression', 'vector', 'bootstrap', 'pca', 'perm'")
+  }
+
+  if (verbose) cat("\nFiltered to", nrow(demo_cor), "arrows.\n")
+  return(demo_cor)
+}
+
+```
+
+
+## Simple correlation tests
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "pval",   
+  alpha = 0.05
+)
+
+
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+Kept all arrows since all had very small p values (<.0001) on at least one of the components (because of sample size).
+
+```{r}
+demo_cor[, c('p_PC1', 'p_PC2')]
+```
+
+
+## Regression filter
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "regression",   
+  alpha = 0.05
+)
+
+
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+
+Same as the correlation test, kept all arrows due to small p values on at least one of the components
+
+```{r}
+demo_cor[, c('Variable', 'p_PC1', 'p_PC2')]
+```
+
+## Bootstrap filter
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "bootstrap",   
+  n_boot = 500,
+  vector_thresh = 0.1
+)
+
+
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+
+This time it kept only 8 arrows, the bootsrap filter removed the arrows that tended to be shorter (meaning the arrows less correlated with PCs), while keeping the longer arrows (meaning the arrows more correlated with PCs). Exactly the kind of patterns we would expect when filtering for importance.
+
+In the scores below, you can see that these arrows all have stability of >.8 for at least one component. Those that have high stability on both means that arrow is meaningfully related to both PCs. 
+
+```{r}
+demo_cor[, c('stability_PC1', 'stability_PC2')]
+```
+
+This seems like a good filtering method moving forward.
+
+## Permutation test
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "perm",   
+  n_perm = 1000,
+  alpha = 0.05
+)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+
+The permutation test kept all arrows, might be related to the sample size issue where the null distribution of correlations is tightly bound to 0, so small correlations can easily be far enough away from the null distribution.
+
+## Vector length threshold
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "vector",   
+  vector_thresh = 0.1 #minimim of .1 correlation
+)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+
+Like the bootsrap method, filtering by minimum correlation size that is considered meaningful also removes the smaller arrows that are less correlated with PCs. However, the threshold is considered highly arbitrary. Bootstrap method is more robust.
+
+## Dual PCA
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "pca",
+  pc_names = c('PC1: Civic/Relational', 'PC2: Ideology/Moral', 'Self-Enhancing/Affirming', 'Cognitive/Pragmatic')
+)
+
+arrow_scale <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1, size = 2) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 6, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1(", pc1_var, "%)", ": Systemic Issues ⬅️ ➡️ Immediate/Current Events"),
+    y = paste0("PC2 (", pc2_var, "%)", ": Large Scale ⬅️ ➡️ Local Scale")
+  ) 
+
+```
+
+### Results
+
+Interpreting the meta-PC plot requires care, since it overlays two principal-component (PC) spaces—the news-topic PCA and the gratification (needs) PCA—on the same axes.
+
+Both gratification-space PC arrows point mainly horizontally, indicating that their strongest association is with PC1 of the news-topic space—the Systemic ↔ Immediate/Current dimension.
+In other words, the correspondence between the two spaces is largely one-dimensional.
+
+People whose news interests emphasize immediate, civic, or community-focused topics (e.g., weather, local issues, traffic, politics) also tend to have pragmatic and relational news needs.
+Conversely, those who focus more on systemic or abstract issues (e.g., education, science, global affairs) tend to express ideological, moral, or self-affirming needs.
+
+The gratification arrows are not perfectly horizontal—they tilt diagonal slightly—suggesting a minor relationship with PC2 of the news-topic space (the Local ↔ Large-scale contrast).
+This weak diagonal component implies that people with civic-relational needs lean slightly toward local-scale news, whereas those with self-enhancing or affirming needs lean slightly toward large-scale topics.
+However, this vertical component is small, so the association of the Local–Large-scale distinction on gratification needs is limited.
+
+
+## Dual Combo PCA
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(gratifications, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(gratifications), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "pca_combo",
+  second_type = 'Gratifications',
+  pc_names = c('PC1: Civic/Relational', 'PC2: Ideology/Moral', 'Self-Enhancing/Affirming', 'Cognitive/Pragmatic')
+)
+
+arrow_scale <- 7
+arrow_scale_meta <- 8
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 3) +
+
+  # convex hull polygons
+    geom_polygon(
+        data = hull_points,
+        aes(x = PC1, y = PC2),
+        alpha = 0.1
+    ) +
+
+  # Individual (small) arrows
+  geom_segment(
+    data = demo_cor %>% filter(Type == "Variable"),
+    aes(x = 0, y = 0,
+        xend = PC1 * arrow_scale,
+        yend = PC2 * arrow_scale),
+    inherit.aes = FALSE,
+    color = "black",
+    alpha = 0.6,
+    arrow = arrow(length = unit(0.15, "cm")),
+    size = 0.7
+  ) +
+
+  # Individual labels 
+  geom_text_repel(
+    data = demo_cor %>% filter(Type == "Variable"),
+    aes(x = PC1 * (arrow_scale + 0.4),
+        y = PC2 * (arrow_scale + 0.4),
+        label = Variable),
+    inherit.aes = FALSE,
+    size = 3,
+    color = "black",
+    alpha = 0.8
+  ) +
+
+  # Meta-PC (large) arrows
+  geom_segment(
+    data = demo_cor %>% filter(Type == "PC"),
+    aes(x = 0, y = 0,
+        xend = PC1 * arrow_scale_meta * 1.1,
+        yend = PC2 * arrow_scale_meta * 1.1),
+    inherit.aes = FALSE,
+    color = "black",
+    size = .7,
+    arrow = arrow(length = unit(0.25, "cm"))
+  ) +
+
+  # Meta-PC labels 
+  geom_text_repel(
+    data = demo_cor %>% filter(Type == "PC"),
+    aes(x = PC1 * (arrow_scale_meta + 0.6),
+        y = PC2 * (arrow_scale_meta + 0.6),
+        label = Variable),
+    inherit.aes = FALSE,
+    size = 4,
+    color = "black"
+  ) +
+
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(
+    x = paste0("PC1(", pc1_var, "%)", ": Systemic Issues ⬅️ ➡️ Immediate/Current Events"),
+    y = paste0("PC2 (", pc2_var, "%)", ": Large Scale ⬅️ ➡️ Local Scale")
+  ) +
+    facet_grid(.~Group)
+
+```
+
+### Results
+
+I tried to make it clear as possible, there's too many arrows and labels that it is hard to see what is going on if in one plot. The best I could figure out is to facet the plot and separate the individual from the meta-PC arrows. If we ever use this approach, this might be the best way to do so, maybe even sequentially so it's not a lot at once.
+
+Right now the plot with individual arrows is not filtered for importance, mainly because having all the arrows helps with interpreting the meta-PC arrow space. But I can imagine combining this approach with a filtering method (e.g., bootstrap) to make the individual plot arrow more succinct.
+
+
+# Additional Experiments
+
+## Bootstrap filtering on characteristic PCA space
+
+The news topics set has 17 arrows.
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- characteristics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 5, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(characteristics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(topics, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(topics), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "bootstrap",   
+  n_boot = 500,
+  vector_thresh = 0.1
+)
+
+arrow_scale <- 7
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+
+Out of 17 total news topic arrows, the bootstrap filter method kept 5, the longest arrows from the original biplot.
+
+## Bootstrap filtering on gratification PCA space
+
+The news topics set has 17 arrows.
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- gratifications %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 5, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(gratifications %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(topics, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(topics), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "bootstrap",   
+  n_boot = 500,
+  vector_thresh = 0.1
+)
+
+arrow_scale <- 7
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 4) +
+  
+  # convex hull polygons
+  geom_polygon(
+      data = hull_points,
+      aes(x = PC1, y = PC2, fill = cluster),
+      alpha = 0.1
+  ) +
+  
+  # demographic arrows
+  geom_segment(data = demo_cor,
+               aes(x = 0, y = 0,
+                   xend = PC1 * arrow_scale,
+                   yend = PC2 * arrow_scale),
+               arrow = arrow(length = unit(0.2,"cm")),
+               inherit.aes = FALSE,
+               color = "black", alpha = 1) +
+  
+  # demographic labels
+  geom_text_repel(data = demo_cor,
+                  aes(x = PC1 * (arrow_scale + 0.5),
+                      y = PC2 * (arrow_scale + 0.5),
+                      label = Variable),
+                  inherit.aes = FALSE,
+                  size = 4, color = "black", alpha = 1) +               
+
+  # Aesthetics
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme_classic() +
+  theme(legend.position = "top",
+        legend.direction = "horizontal",
+        legend.title = element_text(size = 15),
+        legend.text  = element_text(size = 11))+
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  ) 
+
+```
+
+### Results
+
+Out of 17 total news topic arrows, the bootstrap filter method kept 10, the longest arrows from the original biplot.
+
+
+## Test dual combo biplot on gratification x news topic PCA space
+
+Since it is a weird plot that is harder to interpret, I will see if distilling the news topics down to their PCs might illuminate the underlying relationship between news gratifications and news topics. I will also add the ability to execute a bootstrap filter on the individual arrow plot to help with interpertation.
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- gratifications %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(gratifications %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(topics, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(topics), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "pca_combo",
+  second_type = 'NewsTopics',
+  dual_pca_filter = T,
+  pc_names = c('PC1: Immediate/Civic Events', 'PC2: Local Scale', 'Systemic Issues', 'Large Scale')
+)
+
+arrow_scale <- 7
+arrow_scale_meta <- 7
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 3) +
+
+  # convex hull polygons
+    geom_polygon(
+        data = hull_points,
+        aes(x = PC1, y = PC2),
+        alpha = 0.1
+    ) +
+
+  # Individual (small) arrows
+  geom_segment(
+    data = demo_cor %>% filter(Type == "Variable"),
+    aes(x = 0, y = 0,
+        xend = PC1 * arrow_scale,
+        yend = PC2 * arrow_scale),
+    inherit.aes = FALSE,
+    color = "black",
+    alpha = 0.6,
+    arrow = arrow(length = unit(0.15, "cm")),
+    size = 0.7
+  ) +
+
+  # Individual labels 
+  geom_text_repel(
+    data = demo_cor %>% filter(Type == "Variable"),
+    aes(x = PC1 * (arrow_scale + 0.4),
+        y = PC2 * (arrow_scale + 0.4),
+        label = Variable),
+    inherit.aes = FALSE,
+    size = 3,
+    color = "black",
+    alpha = 0.8
+  ) +
+
+  # Meta-PC (large) arrows
+  geom_segment(
+    data = demo_cor %>% filter(Type == "PC"),
+    aes(x = 0, y = 0,
+        xend = PC1 * arrow_scale_meta * 1.1,
+        yend = PC2 * arrow_scale_meta * 1.1),
+    inherit.aes = FALSE,
+    color = "black",
+    size = .7,
+    arrow = arrow(length = unit(0.25, "cm"))
+  ) +
+
+  # Meta-PC labels 
+  geom_text_repel(
+    data = demo_cor %>% filter(Type == "PC"),
+    aes(x = PC1 * (arrow_scale_meta + 0.6),
+        y = PC2 * (arrow_scale_meta + 0.6),
+        label = Variable),
+    inherit.aes = FALSE,
+    size = 4,
+    color = "black"
+  ) +
+
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(
+    x = paste0("PC1(", pc1_var, "%)", ": Self-Enhancing/Affirming ⬅️ ➡️ Civic/Relational"),
+    y = paste0("PC2 (", pc2_var, "%)", ": Cognitive/Pragmatic ⬅️ ➡️ Affective/Moral")
+  ) +
+    facet_grid(.~Group)
+
+```
+
+### Results
+
+This experiment shows that when there is an unclear plot at the individual arrow level, including the meta-PC plot can help uncover true underlying relationships. Although none of the topic arrows point donwards, the meta-PC arrows do. The donward meta arrows aren’t saying “there are individual variables that literally point down,”
+it’s saying “within the set of upward-pointing arrows, there’s a consistent secondary pattern — some variables lean more toward PC1, others more toward PC2 — and that contrast runs downward once we enforce orthogonality.”
+
+The meta-PC space identifies latent contrasts among the individual gratification variables — capturing how they co-vary rather than how they individually correlate with topic PCs.
+
+Even if all individual variables load in the same general direction, PCA enforces orthogonality and can reveal a secondary, hidden dimension — representing internal differentiation within that general trend.
+
+In other words, the meta-PC analysis exposes latent structure within a homogeneous set of variables — variation that is not visually apparent from the individual arrows alone.
