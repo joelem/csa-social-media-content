@@ -502,6 +502,8 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 
 ```
 
+*Note: I applied a arrow filter to only show those with a correlation over .1 (there would be 44 arrows plotted otherwise)*
+
 ### PC and Quadrant Interpretations (for arrows)
 
  These PC and quadrant interpretations are about the demographic arrows, how do respondent demographics orient when laid on top of the news topic space.
@@ -1634,6 +1636,9 @@ filter_arrows <- function(resp_scores, cont_vars,
     # 2. Eigen decomposition of correlation matrix
     demo_eig <- eigen(demo_cor_mat)
 
+    # Variance explained by each meta-PC
+    var_explained_meta <- demo_eig$values / sum(demo_eig$values)
+
     # 3. Compute respondent scores for the first two demo PCs
     demo_scores <- as.matrix(scale(resp_scores[, cont_vars])) %*% demo_eig$vectors[, 1:2]
     colnames(demo_scores) <- c("Demo_PC1", "Demo_PC2")
@@ -1680,10 +1685,12 @@ filter_arrows <- function(resp_scores, cont_vars,
                         use = "pairwise.complete.obs")
     demo_cor_meta <- as.data.frame(t(demo_cor_meta))
     colnames(demo_cor_meta) <- c("PC1", "PC2")
+    demo_cor_meta$VarExp <- var_explained_meta[1:2]
 
     # 6. Add negative counterparts for ± directions
     demo_cor_meta_neg <- demo_cor_meta
     demo_cor_meta_neg[, c("PC1","PC2")] <- -demo_cor_meta_neg[, c("PC1","PC2")]
+    demo_cor_meta_neg$VarExp <- demo_cor_meta$VarExp
 
     # Combine positive and negative meta-arrows
     demo_cor_meta <- rbind(demo_cor_meta, demo_cor_meta_neg)
@@ -2467,7 +2474,7 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cl
   geom_segment(
     data = demo_cor %>% filter(Type == "PC"),
     aes(x = 0, y = 0,
-        xend = PC1 * arrow_scale_meta * 1.1,
+        xend = PC1 * arrow_scale_meta * 1.1, #fixed scalar assumes both PCs equal importance
         yend = PC2 * arrow_scale_meta * 1.1),
     inherit.aes = FALSE,
     color = "black",
@@ -2478,7 +2485,7 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cl
   # Meta-PC labels 
   geom_text_repel(
     data = demo_cor %>% filter(Type == "PC"),
-    aes(x = PC1 * (arrow_scale_meta + 0.6),
+    aes(x = PC1 * (arrow_scale_meta + 0.6), #fixed scalar assumes both PCs equal importance
         y = PC2 * (arrow_scale_meta + 0.6),
         label = Variable),
     inherit.aes = FALSE,
@@ -2720,9 +2727,9 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
 Out of 17 total news topic arrows, the bootstrap filter method kept 10, the longest arrows from the original biplot.
 
 
-## Test dual combo biplot on gratification x news topic PCA space
+## Test dual combo biplot on constrained arrows PCA space
 
-Since it is a weird plot that is harder to interpret, I will see if distilling the news topics down to their PCs might illuminate the underlying relationship between news gratifications and news topics. I will also add the ability to execute a bootstrap filter on the individual arrow plot to help with interpertation.
+Since it is a weird plot that is harder to interpret because all the arrows are pointing in a similar direction (up), I will see if distilling the news topics down to their PCs might illuminate the underlying relationship between news gratifications and news topics. I will also add the ability to execute a bootstrap filter on the individual arrow plot to help with interpertation. I will also add a scale factor to the meta-PC arrows to account for their level of variance explained of the arrows (i.e., their importance). 
 
 ```{r}
 #| title: K Means
@@ -2821,8 +2828,8 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cl
   geom_segment(
     data = demo_cor %>% filter(Type == "PC"),
     aes(x = 0, y = 0,
-        xend = PC1 * arrow_scale_meta * 1.1,
-        yend = PC2 * arrow_scale_meta * 1.1),
+        xend = PC1 * arrow_scale_meta * sqrt(VarExp),
+        yend = PC2 * arrow_scale_meta * sqrt(VarExp)),
     inherit.aes = FALSE,
     color = "black",
     size = .7,
@@ -2832,8 +2839,8 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cl
   # Meta-PC labels 
   geom_text_repel(
     data = demo_cor %>% filter(Type == "PC"),
-    aes(x = PC1 * (arrow_scale_meta + 0.6),
-        y = PC2 * (arrow_scale_meta + 0.6),
+    aes(x = PC1 * (arrow_scale_meta * sqrt(VarExp)),
+        y = PC2 * (arrow_scale_meta * sqrt(VarExp)),
         label = Variable),
     inherit.aes = FALSE,
     size = 4,
@@ -2857,8 +2864,147 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cl
 This experiment shows that when there is an unclear plot at the individual arrow level, including the meta-PC plot can help uncover true underlying relationships. Although none of the topic arrows point donwards, the meta-PC arrows do. The donward meta arrows aren’t saying “there are individual variables that literally point down,”
 it’s saying “within the set of upward-pointing arrows, there’s a consistent secondary pattern — some variables lean more toward PC1, others more toward PC2 — and that contrast runs downward once we enforce orthogonality.”
 
-The meta-PC space identifies latent contrasts among the individual gratification variables — capturing how they co-vary rather than how they individually correlate with topic PCs.
+The meta-PC space identifies latent contrasts among the individual gratification variables — capturing how they co-vary rather than how they individually correlate with news topic PCs. 
 
-Even if all individual variables load in the same general direction, PCA enforces orthogonality and can reveal a secondary, hidden dimension — representing internal differentiation within that general trend.
+In this example, the arrows are all constrained upwards, meaning their variance in direction is low, basically one cluster. In this case,
 
-In other words, the meta-PC analysis exposes latent structure within a homogeneous set of variables — variation that is not visually apparent from the individual arrows alone.
+Meta-PC1 = overall average direction of the clustered arrows, will simply point along the shared direction.
+Meta-PC2 = will capture residual differences among them, the main orthogonal contrast within that cluster, explains less variance though.
+
+When all the arrows point roughly the same way, the meta-PCs mostly describe subtle within-cluster contrasts rather than big, new directions.
+
+## Test dual combo biplot on diverse arrows space
+
+In this example, the individual demographic arrows are more spread out, so the meta-PCs should be more aligned with the individual arrows. There are 44 demographic variables.
+
+```{r}
+#| title: K Means
+
+# Create correlation matrix
+corrmat <- topics %>%
+    select(-ResponseId) %>%  
+    cor()
+
+#run k-means
+k_means = kmeans(corrmat, centers = 7, nstart = 20)
+
+## Biplot comparing to news gratifications
+# run PCA
+pcs <- prcomp(corrmat, scale. = TRUE)
+# proportion of variance explained
+var_explained <- pcs$sdev^2 / sum(pcs$sdev^2)
+pc1_var <- round(var_explained[1] * 100, 1)
+pc2_var <- round(var_explained[2] * 100, 1)
+
+# genre coordinates in PC space
+genres <- as.data.frame(pcs$x[, 1:2])
+colnames(genres) <- c("PC1", "PC2")
+genres$Genre <- rownames(corrmat)
+genres$cluster <- factor(k_means$cluster)
+
+
+hull_points <- genres %>%
+  group_by(cluster) %>%
+  slice(chull(PC1, PC2))
+
+# Project respondents into genre-PC space
+resp_scores <- as.matrix(topics %>% select(-ResponseId)) %*% pcs$rotation[,1:2]
+resp_scores <- as.data.frame(resp_scores)
+colnames(resp_scores) <- c("PC1", "PC2")
+resp_scores$ResponseId <- dat$ResponseId
+
+# join dummy-coded demos
+resp_scores <- resp_scores %>%
+  left_join(demos, by = "ResponseId")
+
+# correlate demographics with respondent PC scores
+cont_vars <- setdiff(names(demos), "ResponseId")
+
+# Filter arrows using correlation test p values
+demo_cor <- filter_arrows(
+  resp_scores = resp_scores,
+  cont_vars = cont_vars,
+  method = "pca_combo",
+  second_type = 'Demographics',
+  dual_pca_filter = T,
+  pc_names = c('PC1: More well off', 'PC2: Older White Traditionalists', 'Less Well Off', 'Younger Diverse Progressives') #Sign switched on PC2 (inherent to PCA)
+)
+
+arrow_scale <- 7
+arrow_scale_meta <- 7
+
+ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cluster)) +
+  # genre points
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = Genre), size = 3) +
+
+  # convex hull polygons
+    geom_polygon(
+        data = hull_points,
+        aes(x = PC1, y = PC2),
+        alpha = 0.1
+    ) +
+
+  # Individual (small) arrows
+  geom_segment(
+    data = demo_cor %>% filter(Type == "Variable"),
+    aes(x = 0, y = 0,
+        xend = PC1 * arrow_scale,
+        yend = PC2 * arrow_scale),
+    inherit.aes = FALSE,
+    color = "black",
+    alpha = 0.6,
+    arrow = arrow(length = unit(0.15, "cm")),
+    size = 0.7
+  ) +
+
+  # Individual labels 
+  geom_text_repel(
+    data = demo_cor %>% filter(Type == "Variable"),
+    aes(x = PC1 * (arrow_scale + 0.4),
+        y = PC2 * (arrow_scale + 0.4),
+        label = Variable),
+    inherit.aes = FALSE,
+    size = 3,
+    color = "black",
+    alpha = 0.8
+  ) +
+
+  # Meta-PC (large) arrows
+  geom_segment(
+    data = demo_cor %>% filter(Type == "PC"),
+    aes(x = 0, y = 0,
+        xend = PC1 * arrow_scale_meta * sqrt(VarExp), #scaling by variance explained accounts for PC importance
+        yend = PC2 * arrow_scale_meta * sqrt(VarExp)),
+    inherit.aes = FALSE,
+    color = "black",
+    size = .7,
+    arrow = arrow(length = unit(0.25, "cm"))
+  ) +
+
+  # Meta-PC labels 
+  geom_text_repel(
+    data = demo_cor %>% filter(Type == "PC"),
+    aes(x = PC1 * (arrow_scale_meta * sqrt(VarExp) + .4), #scaling by variance explained accounts for PC importance
+        y = PC2 * (arrow_scale_meta * sqrt(VarExp)+ .4),
+        label = Variable),
+    inherit.aes = FALSE,
+    size = 4,
+    color = "black"
+  ) +
+
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(
+    x = paste0("PC1(", pc1_var, "%)", ": Systemic Issues ⬅️ ➡️ Immediate/Civic Events"),
+    y = paste0("PC2 (", pc2_var, "%)", ": Large Scale ⬅️ ➡️ Local Scale")
+  ) +
+    facet_grid(.~Group)
+
+```
+
+### Results
+
+As expected, the bootstrap filtered out least important demographics, only kept 19 out of 45, and the meta-PC arrows are more easily interpretable because they follow the same directionality as the individual arrows (this is possible because the individual arrows already traverse the whole space, as opposed to the constrained example above).
