@@ -2862,9 +2862,11 @@ ggplot(genres, aes(x = PC1, y = PC2, color = cluster, fill = cluster, shape = cl
 ### Results
 
 This experiment shows that when there is an unclear plot at the individual arrow level, including the meta-PC plot can help uncover true underlying relationships. Although none of the topic arrows point donwards, the meta-PC arrows do. The donward meta arrows aren’t saying “there are individual variables that literally point down,”
-it’s saying “within the set of upward-pointing arrows, there’s a consistent secondary pattern — some variables lean more toward PC1, others more toward PC2 — and that contrast runs downward once we enforce orthogonality.”
+it’s saying within the set of upward-pointing news arrows, some of the arrows are higher vs lower and this vertical pattern differentiates the most between news topics (PC1 - systemic vs immediate civic topics), and this news topic PC1 relates most with the gratification PC1. Interest in systemic topics is more aligned with affective moral gratifications, interest in immediate/civic event topics is more aligned with cognitive/pragmatic gratifications.
 
-The meta-PC space identifies latent contrasts among the individual gratification variables — capturing how they co-vary rather than how they individually correlate with news topic PCs. 
+Then within the set of upward pointing news arrows, a smaller pattern exists where some point left and others right, this is the news topic PC2 (local vs. large scale), which ends up being related to both the gratification PC1 and PC2 (since it is diagonal). Interest in large scale topics = interest in affective/moral and self-enhancing/affirming gratifications. Interest in local scale topics = interest in cognitive/pragmatic and civic/relational gratifications. But this set of relations is overall smaller effect than the PC1 patterns above.
+
+The meta-PC space identifies latent contrasts among the individual news topics — capturing how they co-vary rather than how topics individually correlate with gratification PCs. 
 
 In this example, the arrows are all constrained upwards, meaning their variance in direction is low, basically one cluster. In this case,
 
